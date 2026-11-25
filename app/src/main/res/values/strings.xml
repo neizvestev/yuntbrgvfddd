@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">T.GIT</string>
+    <string name="error_offline_title">Нет подключения к сети</string>
+    <string name="error_load_title">Не удалось открыть страницу</string>
+    <string name="error_load_description">Проверьте интернет-соединение и попробуйте обновить страницу.</string>
+    <string name="error_retry_button">Обновить</string>
+</resources>

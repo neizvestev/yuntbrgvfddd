@@ -1,0 +1,6 @@
+{
+  "name": "T.GIT",
+  "description": "Полноэкранное адаптивное веб-приложение T.GIT без лишних разрешений.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
