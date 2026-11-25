@@ -111,6 +111,15 @@ fun WebErrorOverlay(
                     textAlign = TextAlign.Center,
                 )
 
+                if (error.description.isNotBlank()) {
+                    Text(
+                        text = "${error.description} (${error.errorCode})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Button(

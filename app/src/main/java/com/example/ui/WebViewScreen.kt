@@ -14,6 +14,7 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
@@ -47,7 +48,18 @@ import com.example.config.AppConfig
 import com.example.config.UrlPolicy
 import com.example.ui.components.WebErrorOverlay
 
-private val SAFE_EXTERNAL_SCHEMES = setOf("mailto", "tel", "sms", "tg")
+private const val WEB_COMPAT_POLYFILL_JS = """
+(function() {
+  try {
+    if (typeof window.Notification === 'undefined') {
+      window.Notification = {
+        permission: 'denied',
+        requestPermission: function() { return Promise.resolve('denied'); }
+      };
+    }
+  } catch (e) {}
+})();
+"""
 
 @Composable
 fun WebViewScreen(
@@ -146,8 +158,8 @@ fun WebViewScreen(
                             val target = targetUri.toString()
                             val scheme = targetUri.scheme?.lowercase().orEmpty()
 
-                            if (scheme == "https" ||
-                                scheme == "http" ||
+                            if (scheme == "http" ||
+                                scheme == "https" ||
                                 scheme == "javascript" ||
                                 scheme == "about" ||
                                 scheme == "data" ||
@@ -160,25 +172,15 @@ fun WebViewScreen(
                                 }
                             }
 
-                            // Only allow safe, explicit external schemes (never arbitrary intent:// or file://).
-                            if (scheme in SAFE_EXTERNAL_SCHEMES) {
-                                runCatching {
-                                    val intent = Intent(Intent.ACTION_VIEW, targetUri).apply {
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    }
-                                    ctx.startActivity(intent)
+                            return try {
+                                val intent = Intent(Intent.ACTION_VIEW, targetUri).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
+                                ctx.startActivity(intent)
+                                true
+                            } catch (_: Exception) {
+                                true
                             }
-                            return true
-                        }
-
-                        override fun onReceivedSslError(
-                            view: WebView?,
-                            handler: SslErrorHandler?,
-                            error: SslError?,
-                        ) {
-                            // Never bypass invalid SSL certificates (Play Protect security requirement).
-                            handler?.cancel()
                         }
 
                         override fun onPageStarted(
@@ -187,11 +189,13 @@ fun WebViewScreen(
                             favicon: Bitmap?,
                         ) {
                             super.onPageStarted(view, url, favicon)
+                            view?.evaluateJavascript(WEB_COMPAT_POLYFILL_JS, null)
                             viewModel.onPageStarted(url)
                         }
 
                         override fun onPageCommitVisible(view: WebView?, url: String?) {
                             super.onPageCommitVisible(view, url)
+                            view?.evaluateJavascript(WEB_COMPAT_POLYFILL_JS, null)
                             viewModel.onPageVisibleOrFinished(
                                 url = url,
                                 canGoBack = view?.canGoBack() == true,
@@ -238,6 +242,27 @@ fun WebViewScreen(
                                     )
                                 }
                             }
+                        }
+
+                        override fun onReceivedSslError(
+                            view: WebView?,
+                            handler: SslErrorHandler?,
+                            error: SslError?,
+                        ) {
+                            handler?.cancel()
+                            viewModel.onMainFrameError(
+                                errorCode = ERROR_FAILED_SSL_HANDSHAKE,
+                                description = "SSL error (${error?.primaryError ?: -1})",
+                                isOffline = false,
+                            )
+                        }
+
+                        override fun onRenderProcessGone(
+                            view: WebView?,
+                            detail: RenderProcessGoneDetail?,
+                        ): Boolean {
+                            view?.reload()
+                            return true
                         }
                     }
 
@@ -329,6 +354,7 @@ fun WebViewScreen(
                         loadUrl(AppConfig.TARGET_URL)
                     }
 
+                    requestFocus()
                     webViewRef = this
                 }
             },
@@ -365,9 +391,8 @@ private fun handleFileDownload(
 ) {
     val parsedUri = runCatching { Uri.parse(url) }.getOrNull() ?: return
     val scheme = parsedUri.scheme?.lowercase().orEmpty()
-    if (scheme != "https") return
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && (scheme == "http" || scheme == "https")) {
         try {
             val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
             val request = DownloadManager.Request(parsedUri).apply {
